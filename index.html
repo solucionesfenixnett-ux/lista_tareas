@@ -9,6 +9,30 @@
     .completada {
       text-decoration: line-through;
     }
+
+    /* Fondo que cubre toda la pantalla y centra la ventana de confirmación */
+    #ventanaConfirmacion {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Cuando tiene la clase "oculto", la ventana no se muestra */
+    #ventanaConfirmacion.oculto {
+      display: none;
+    }
+
+    /* El cuadro blanco donde van el mensaje y los botones */
+    #ventanaConfirmacion .cuadro {
+      background: white;
+      padding: 16px;
+    }
   </style>
 </head>
 <body>
@@ -19,13 +43,93 @@
 
   <ul id="listaTareas"></ul>
 
+  <!-- Ventana de confirmación: empieza oculta -->
+  <div id="ventanaConfirmacion" class="oculto">
+    <div class="cuadro">
+      <p>Confirma borrar tarea no completada?</p>
+      <button id="botonConfirmar">Confirmar</button>
+      <button id="botonCancelar">Cancelar</button>
+    </div>
+  </div>
+
   <script>
     // 1. Guardamos los elementos de la página en variables
     const entrada = document.getElementById("entradaTarea");
     const botonAgregar = document.getElementById("botonAgregar");
     const lista = document.getElementById("listaTareas");
+    const ventana = document.getElementById("ventanaConfirmacion");
+    const botonConfirmar = document.getElementById("botonConfirmar");
+    const botonCancelar = document.getElementById("botonCancelar");
 
-    // 2. Función que agrega una tarea nueva
+    // 2. Datos: la lista de tareas vive aquí, en un arreglo.
+    // Cada tarea es un objeto así: { texto: "Comprar pan", completada: false }
+    const CLAVE = "tareas";
+    let tareas = [];
+
+    // Aquí se guarda la tarea que está esperando confirmación para borrarse
+    let pendiente = null;
+
+    // 3. GUARDAR: convierte el arreglo en texto y lo guarda en el navegador
+    function guardarTareas() {
+      try {
+        localStorage.setItem(CLAVE, JSON.stringify(tareas));
+      } catch (error) {
+        console.log("No se pudo guardar:", error);
+      }
+    }
+
+    // 4. CARGAR: lee el texto guardado, lo convierte en arreglo y muestra las tareas
+    function cargarTareas() {
+      try {
+        const guardado = localStorage.getItem(CLAVE);
+        if (guardado) {
+          const datos = JSON.parse(guardado);
+          if (Array.isArray(datos)) {
+            tareas = datos;
+          }
+        }
+      } catch (error) {
+        console.log("No se pudo cargar:", error);
+        tareas = [];
+      }
+      tareas.forEach(mostrarTarea);
+    }
+
+    // 5. Dibuja una tarea en la pantalla (sirve para tareas nuevas y para las cargadas)
+    function mostrarTarea(tarea) {
+      const item = document.createElement("li");
+      const casilla = document.createElement("input");
+      const textoTarea = document.createElement("span");
+      const botonBorrar = document.createElement("button");
+
+      casilla.type = "checkbox";
+      casilla.checked = tarea.completada;
+      textoTarea.textContent = tarea.texto;
+      textoTarea.classList.toggle("completada", tarea.completada);
+      botonBorrar.textContent = "Borrar";
+
+      // Al marcar o desmarcar la casilla: se tacha el texto y se guarda el cambio
+      casilla.addEventListener("change", function () {
+        tarea.completada = casilla.checked;
+        textoTarea.classList.toggle("completada", tarea.completada);
+        guardarTareas();
+      });
+
+      // Al tocar "Borrar": si está completada se borra directo,
+      // si no está completada, primero se pide confirmación
+      botonBorrar.addEventListener("click", function () {
+        if (tarea.completada) {
+          borrarTarea(tarea, item);
+        } else {
+          pedirConfirmacion(tarea, item);
+        }
+      });
+
+      item.append(casilla, textoTarea, botonBorrar);
+      lista.appendChild(item);
+    }
+
+    // 6. Agregar una tarea nueva
     function agregarTarea() {
       const texto = entrada.value.trim();
 
@@ -34,36 +138,51 @@
         return;
       }
 
-      // Creamos los pedacitos de la tarea
-      const item = document.createElement("li");
-      const casilla = document.createElement("input");
-      const textoTarea = document.createElement("span");
-      const botonBorrar = document.createElement("button");
-
-      casilla.type = "checkbox";
-      textoTarea.textContent = texto;
-      botonBorrar.textContent = "Borrar";
-
-      // Al marcar o desmarcar la casilla, se tacha o se destacha el texto
-      casilla.addEventListener("change", function () {
-        textoTarea.classList.toggle("completada", casilla.checked);
-      });
-
-      // Al tocar "Borrar", se elimina toda la tarea
-      botonBorrar.addEventListener("click", function () {
-        item.remove();
-      });
-
-      // Armamos la tarea y la ponemos en la lista
-      item.append(casilla, textoTarea, botonBorrar);
-      lista.appendChild(item);
+      const tarea = { texto: texto, completada: false };
+      tareas.push(tarea);   // la sumamos al arreglo
+      mostrarTarea(tarea);  // la dibujamos en pantalla
+      guardarTareas();      // guardamos el cambio
 
       // Vaciamos la cajita para escribir otra tarea
       entrada.value = "";
     }
 
-    // 3. Conectamos el botón "Agregar" con la función
+    // 7. Borrar una tarea: la quitamos del arreglo, de la pantalla y guardamos
+    function borrarTarea(tarea, item) {
+      tareas = tareas.filter(function (t) {
+        return t !== tarea;
+      });
+      item.remove();
+      guardarTareas();
+    }
+
+    // 8. Ventana de confirmación
+    function pedirConfirmacion(tarea, item) {
+      pendiente = { tarea: tarea, item: item };
+      ventana.classList.remove("oculto");
+    }
+
+    function cerrarVentana() {
+      pendiente = null;
+      ventana.classList.add("oculto");
+    }
+
+    // Confirmar: borra la tarea pendiente y cierra la ventana
+    botonConfirmar.addEventListener("click", function () {
+      if (pendiente) {
+        borrarTarea(pendiente.tarea, pendiente.item);
+      }
+      cerrarVentana();
+    });
+
+    // Cancelar: solo cierra la ventana, la tarea se queda
+    botonCancelar.addEventListener("click", cerrarVentana);
+
+    // 9. Conectamos el botón "Agregar" con la función
     botonAgregar.addEventListener("click", agregarTarea);
+
+    // 10. Al abrir la página, cargamos las tareas guardadas
+    cargarTareas();
   </script>
 </body>
 </html>
